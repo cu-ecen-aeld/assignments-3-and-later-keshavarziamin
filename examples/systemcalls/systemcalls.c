@@ -58,15 +58,28 @@ bool do_exec(int count, ...)
      *   as second argument to the execv() command.
      *
      */
-    if (fork() != 0)
-        return false;
 
-    execv(command[0], &command[1]);
-    wait(NULL);
+    pid_t pid = fork();
+    bool retStauts;
+    int retExecv = 0;
+    switch (pid)
+    {
+    case -1:
+        retStauts = false;
+        break;
+    case 0:
+        retExecv = execv(command[0], command);
+        if (retExecv == -1)
+            retStauts = false;
+        break;
+    default:
+        wait(NULL);
+        break;
+    }
 
     va_end(args);
 
-    return true;
+    return retStauts;
 }
 
 /**
@@ -96,8 +109,39 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
      *   The rest of the behaviour is same as do_exec()
      *
      */
-    // execv(command[0], &command[1]);
+    bool retStatus = false;
+    int execvStatus = 0;
+    int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
+    if (fd < 0)
+        return retStatus; // return false
+
+    pid_t pid = fork();
+
+    switch (pid)
+    {
+    case -1:
+        retStatus = false;
+        break;
+
+    case 0:
+        if (dup2(fd, 1) < 0)
+            retStatus = false;
+        else
+        {
+            close(fd);
+            execvStatus = execv(command[0], command);
+            if (execvStatus == -1)
+                retStatus = false;
+        }
+        break;
+
+    default:
+        close(fd);
+        wait(NULL);
+        break;
+    }
+
     va_end(args);
 
-    return true;
+    return retStatus;
 }
