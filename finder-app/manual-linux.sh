@@ -35,6 +35,17 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # TODO: Add your kernel build steps here
+    # clean the kernel configuration
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    echo "clean the kernel configuration"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    echo "Configure for our “virt” arm dev board we will simulate in QEMU"
+    make -j8 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all 
+    echo "Build a kernel image for booting with QEMU"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    echo "Build any kernel modules"
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs 
+    echo "Build the devicetree"    
 fi
 
 echo "Adding the Image in outdir"
@@ -48,6 +59,9 @@ then
 fi
 
 # TODO: Create necessary base directories
+mkdir -p bin dev etc home lib lib64 proc sbin sys tmp var usr
+mkdir -p usr/bin usr/lib usr/sbin
+mkdir -p var/log 
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -56,11 +70,15 @@ git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
+    make distclean
+    make defconfig
 else
     cd busybox
 fi
 
 # TODO: Make and install busybox
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
