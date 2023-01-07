@@ -59,9 +59,12 @@ then
 fi
 
 # TODO: Create necessary base directories
-mkdir -p ${OUTDIR}/rootfs/{bin dev etc home lib lib64 proc sbin sys tmp var usr}
-mkdir -p ${OUTDIR}/rootfs/usr/{bin lib sbin}
+mkdir -p ${OUTDIR}/rootfs/{bin,dev,etc,home,lib,lib64,proc,sbin,sys,tmp,var,usr}
+mkdir -p ${OUTDIR}/rootfs/usr/{bin,lib,sbin}
 mkdir -p ${OUTDIR}/var/log 
+mkdir -p ${OUTDIR}/rootfs/home/conf
+
+
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -79,37 +82,53 @@ fi
 # TODO: Make and install busybox
 config_prefix=${OUTDIR}/rootfs
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
-make CONFIG_PREFIX=${config_prefix} ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
+make CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 echo "Library dependencies"
-${CROSS_COMPILE}readelf -a ${config_prefix}/bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a ${config_prefix}/bin/busybox | grep "Shared library"
+${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox | grep "program interpreter"
+${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
-
-cp -a ${SYSROOT}/lib/*      rootfs/lib
-cp -a ${SYSROOT}/lib64/*    rootfs/lib64
-
+cp -a ${SYSROOT}/lib/*      ${OUTDIR}/rootfs/lib
+cp -a ${SYSROOT}/lib64/*    ${OUTDIR}/rootfs/lib64
+echo "Add library dependencies to rootfs"
 
 
 # TODO: Make device nodes
-sudo mknod -m 666 ${config_prefix}/dev/null c 1 3 #The null device should be readable and writable by everyone
-sudo mknod -m 600 ${config_prefix}/dev/console c 5 1 #The console only needs to be accessible to root
+sudo mknod -m 666 ${OUTDIR}/rootfs/dev/null c 1 3 #The null device should be readable and writable by everyone
+sudo mknod -m 600 ${OUTDIR}/rootfs/dev/console c 5 1 #The console only needs to be accessible to root
+echo "Make device nodes"
 
 # TODO: Clean and build the writer utility
-
+cd ${FINDER_APP_DIR}
+if [ -e writer ]
+then
+    make clean
+fi
+make
+echo "Clean and build the writer utility"
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp ${FINDER_APP_DIR}/finder-app/finder-test.sh ${config_prefix}/home
-cp ${FINDER_APP_DIR}/finder-app/finder.sh ${config_prefix}/home
-cp ${FINDER_APP_DIR}/finder-app/autorun-qemu.sh ${config_prefix}/home
-cp -r ${FINDER_APP_DIR}/finer-app/conf ${config_prefix}/home
+cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/writer* ${OUTDIR}/rootfs/home
+cp -r ${FINDER_APP_DIR}/conf/* ${OUTDIR}/rootfs/home/conf
+cp ${FINDER_APP_DIR}/../conf/username.txt ${OUTDIR}/rootfs/home
+echo "Copy the finder related scripts and executables to the /home directory"
+tree ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
-cd rootfs/
-sudo chown -R root:root *
+sudo chown -R root:root ${OUTDIR}/rootfs/*
+echo "Chown the root directory"
+
 # TODO: Create initramfs.cpio.gz
+cd ${OUTDIR}/rootfs
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
-gzip -f initramfs.cpio
+gzip -f ${OUTDIR}/initramfs.cpio
+echo "Create initramfs.cpio.gz"
+
+cp  $OUTDIR/linux-stable/arch/arm64/boot/Image $OUTDIR/Image
+echo "copy the Image file in new directory"
