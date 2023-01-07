@@ -124,6 +124,7 @@ tree ${OUTDIR}/rootfs/home
 sudo chown -R root:root ${OUTDIR}/rootfs/*
 echo "Chown the root directory"
 
+
 # TODO: Create initramfs.cpio.gz
 cd ${OUTDIR}/rootfs
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
