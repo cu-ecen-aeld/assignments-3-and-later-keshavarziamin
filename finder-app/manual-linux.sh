@@ -114,7 +114,9 @@ echo "Clean and build the writer utility"
 cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
-cp ${FINDER_APP_DIR}/writer* ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/writer.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/writer.c ${OUTDIR}/rootfs/home
 cp -r ${FINDER_APP_DIR}/conf/* ${OUTDIR}/rootfs/home/conf
 cp ${FINDER_APP_DIR}/../conf/username.txt ${OUTDIR}/rootfs/home
 echo "Copy the finder related scripts and executables to the /home directory"
