@@ -113,7 +113,7 @@ echo "Clean and build the writer utility"
 # on the target rootfs
 cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
-cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home  
 cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/writer.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/writer.c ${OUTDIR}/rootfs/home
