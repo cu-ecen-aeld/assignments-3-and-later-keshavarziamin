@@ -20,13 +20,13 @@ void *threadfunc(void *thread_param)
     struct thread_data *new_thrdata = (struct thread_data *)thread_param;
     new_thrdata->thread_complete_success = false;
 
-    usleep(new_thrdata->wait_obtain);
+    usleep(new_thrdata->wait_obtain*1000);
 
-    int errStatus = thread_mutex_lock(new_thrdata->mutex);
+    int errStatus = pthread_mutex_lock(new_thrdata->mutex);
     if (!errStatus)
     {
-        usleep(new_thrdata->wait_release);
-        errStatus = thread_mutex_unlock(new_thrdata->mutex);
+        usleep(new_thrdata->wait_release*1000);
+        errStatus = pthread_mutex_unlock(new_thrdata->mutex);
         if (!errStatus)
             new_thrdata->thread_complete_success=true;
     }
@@ -65,7 +65,7 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex, int
     thrdata->wait_release = wait_to_release_ms;
     thrdata->thread_complete_success = false;
 
-    int err = thread_create(thread, NULL, threadfunc, thrdata);
+    int err = pthread_create(thread, NULL, threadfunc, thrdata);
     if(!err || thrdata->thread_complete_success)
         return true;
     
