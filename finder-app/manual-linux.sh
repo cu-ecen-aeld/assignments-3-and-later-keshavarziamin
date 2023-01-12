@@ -120,7 +120,7 @@ cp ${FINDER_APP_DIR}/writer.c ${OUTDIR}/rootfs/home
 cp -r ${FINDER_APP_DIR}/conf/* ${OUTDIR}/rootfs/home/conf
 cp ${FINDER_APP_DIR}/../conf/username.txt ${OUTDIR}/rootfs/home
 echo "Copy the finder related scripts and executables to the /home directory"
-tree ${OUTDIR}/rootfs/home
+# tree ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
 sudo chown -R root:root ${OUTDIR}/rootfs/*
