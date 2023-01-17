@@ -21,37 +21,42 @@ void printUsage(void)
     
 }
 
-bool file_create(FILE *file)
+bool file_create(FILE **file)
 {
 
-    // if (access(SOCK_DATA_FILE, F_OK) == 0)
-    //     return true;
+    
 
-    file = fopen(SOCK_DATA_FILE, "w");
+    *file = fopen(SOCK_DATA_FILE, "w");
 
-    if (!file)
+    if (!*file)
     {
-        perror("Creating a new file failed.\r\n");
-        syslog(LOG_ERR, "Creating a new file failed\r\n");
+        perror("Creating a new file failed.");
+        syslog(LOG_ERR, "Creating a new file failed.");
         return false;
     }
 
-    printf("creating file successed.\r\n");
-    syslog(LOG_INFO, "creating file successed.\r\n");
+    printf("creating file succeeded.\r\n");
+    syslog(LOG_INFO, "creating file succeeded.");
     return true;
 }
 
-bool file_remove(FILE *file)
+bool file_remove(FILE **file)
 {
-    // before removing file has to be closed
-    int err = fclose(file);
+    //before removing file has to be closed
+    if (access(SOCK_DATA_FILE, F_OK) != 0){
+        perror("ERROR::CLOSING FILE:");
+        syslog(LOG_INFO, "there is not file: %s.",SOCK_DATA_FILE);
+        return false;
+    }
+    
+    int err = fclose(*file);
     if (err)
     {
         perror("ERROR::CLOSING FILE:");
-        syslog(LOG_INFO, "closing file failed.\r\n");
+        syslog(LOG_INFO, "closing file failed.");
         return false;
     }
-    syslog(LOG_INFO, "closing file successed.\r\n");
+    syslog(LOG_INFO, "closing file succeeded.");
 
     err = remove(SOCK_DATA_FILE);
     if (err)
@@ -61,7 +66,7 @@ bool file_remove(FILE *file)
         return false;
     }
 
-    syslog(LOG_INFO, "removing file successed.\r\n");
+    syslog(LOG_INFO, "removing file succeeded.");
 
     return true;
 }
@@ -74,8 +79,8 @@ bool server_createSocket(int *sockfd)
     *sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (*sockfd < 0)
     {
-        perror("Creating a new socket failed.\r\n");
-        syslog(LOG_ERR, "Creating a new socket failed\r\n");
+        perror("Creating a new socket failed.");
+        syslog(LOG_ERR, "Creating a new socket failed.");
         return false;
     }
     return true;
@@ -86,21 +91,21 @@ bool server_connectSocket(int *sockfd, struct sockaddr_in *serverAddr)
     int err = bind(*sockfd, (struct sockaddr *)serverAddr, sizeof(struct sockaddr));
     if (err < 0)
     {
-        syslog(LOG_ERR, "Binding to IP and port failed.\r\n");
+        syslog(LOG_ERR, "Binding to IP and port failed.");
         return false;
     }
 
     err = listen(*sockfd, 10);
     if (err)
     {
-        syslog(LOG_ERR, "Binding to IP and port failed.\r\n");
+        syslog(LOG_ERR, "Binding to IP and port failed.");
         return false;
     }
     syslog(LOG_DEBUG, "Accepted connection from xxx");
     return true;
 }
 
-bool server_receiveData(FILE *file, int *sockfd)
+bool server_receiveData(FILE **file, int *sockfd)
 {
 
     int buffer[LENGTH_OF_BUFFER];
@@ -108,18 +113,18 @@ bool server_receiveData(FILE *file, int *sockfd)
     if (recv(*sockfd, buffer, LENGTH_OF_BUFFER, 0) < 0)
         return false;
 
-    size_t retSize = fwrite(buffer, sizeof(int), LENGTH_OF_BUFFER, file);
+    size_t retSize = fwrite(buffer, sizeof(int), LENGTH_OF_BUFFER, *file);
     if (retSize < 0)
         return false;
 
     return true;
 }
 
-void server_exit(FILE *file, int *sockfd)
+void server_exit(FILE **file, int *sockfd)
 {
 
-    if (!file_remove(file))
-        exit(EXIT_FAILURE);
+    // if (!file_remove(file))
+    //     exit(EXIT_FAILURE);
 
     int err = close(*sockfd);
 
@@ -129,8 +134,8 @@ void server_exit(FILE *file, int *sockfd)
         syslog(LOG_ERR, "closing socket falied.\r\n");
         exit(EXIT_FAILURE);
     }
-    syslog(LOG_ERR, "closing socket successed.\r\n");
-    syslog(LOG_DEBUG, "Caught signal, exiting\r\n");
+    syslog(LOG_ERR, "closing socket succeeded.");
+    syslog(LOG_DEBUG, "Caught signal, exiting.");
 
     closelog();
 
@@ -158,21 +163,21 @@ void signal_create()
     if (err)
     {
         perror("SIGNAL::CREATE SIGTERM:");
-        syslog(LOG_ERR, "creating SIGTERM failed.\r\n");
+        syslog(LOG_ERR, "creating SIGTERM failed.");
         exit(EXIT_FAILURE);
     }
 
-    syslog(LOG_ERR, "creating SIGTERM successed.\r\n");
+    syslog(LOG_ERR, "creating SIGTERM succeeded.");
 
     err = sigaction(SIGINT, &action, NULL);
     if (err)
     {
         perror("SIGNAL::CREATE SIGINT:");
-        syslog(LOG_ERR, "creating SIGINT failed.\r\n");
+        syslog(LOG_ERR, "creating SIGINT failed.");
         exit(EXIT_FAILURE);
     }
 
-    syslog(LOG_ERR, "creating SIGINT successed.\r\n");
+    syslog(LOG_ERR, "creating SIGINT succeeded.");
 }
 
 int main(int argc, char *argv[])
@@ -212,10 +217,12 @@ int main(int argc, char *argv[])
         return err;
     printf("Accepted connection from %d.\r\n", serverAddr.sin_addr.s_addr);
 
-    FILE *file = NULL;
-    if (!file_create(file))
+    FILE *file ;
+    if (!file_create(&file))
         return err;
 
+    
+    
     while (1)
     {
         // if (!server_receiveData(file, &sockfd))
@@ -223,8 +230,12 @@ int main(int argc, char *argv[])
         //     syslog(LOG_ERR, "recieving data failed\r\n");
         //     return err;
         // }
-        if (acceptedExit)
-            server_exit(file, &sockfd);
+        if (acceptedExit){
+            file_remove(&file);
+            exit(0);
+            // server_exit(&file, &sockfd);
+        }
+            // break;
     }
 
     return 0;
