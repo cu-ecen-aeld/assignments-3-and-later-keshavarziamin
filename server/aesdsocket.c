@@ -123,8 +123,8 @@ bool server_receiveData(FILE **file, int *sockfd)
 void server_exit(FILE **file, int *sockfd)
 {
 
-    // if (!file_remove(file))
-    //     exit(EXIT_FAILURE);
+    if (!file_remove(file))
+        exit(EXIT_FAILURE);
 
     int err = close(*sockfd);
 
@@ -220,8 +220,6 @@ int main(int argc, char *argv[])
     FILE *file ;
     if (!file_create(&file))
         return err;
-
-    
     
     while (1)
     {
@@ -230,10 +228,8 @@ int main(int argc, char *argv[])
         //     syslog(LOG_ERR, "recieving data failed\r\n");
         //     return err;
         // }
-        if (acceptedExit){
-            file_remove(&file);
-            exit(0);
-            // server_exit(&file, &sockfd);
+        if (acceptedExit){            
+            server_exit(&file, &sockfd);
         }
             // break;
     }
