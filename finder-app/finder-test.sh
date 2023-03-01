@@ -9,16 +9,15 @@ NUMFILES=10
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
 username=$(cat conf/username.txt)
+RESULT_ADDR="/tmp/assignment4-result.txt"
 
-if [ $# -lt 2 ]
-then
+if [ $# -lt 2 ]; then
 	echo "Using default value ${WRITESTR} for string to write"
-	if [ $# -lt 1 ]
-	then
+	if [ $# -lt 1 ]; then
 		echo "Using default value ${NUMFILES} for number of files to write"
 	else
 		NUMFILES=$1
-	fi	
+	fi
 else
 	NUMFILES=$1
 	WRITESTR=$2
@@ -35,25 +34,30 @@ mkdir -p "$WRITEDIR"
 #The quotes signify that the entire string in WRITEDIR is a single string.
 #This issue can also be resolved by using double square brackets i.e [[ ]] instead of using quotes.
 
-
-
-if [ -d "$WRITEDIR" ]
-then
+if [ -d "$WRITEDIR" ]; then
 	echo "$WRITEDIR created"
 else
 	exit 1
 fi
 
-#echo "Removing the old writer utility and compiling as a native application"
-#make clean
-#make
+echo "Removing the old writer utility and compiling as a native application"
+make clean
+make
 
-for i in $( seq 1 $NUMFILES)
-do
-	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+for i in $(seq 1 $NUMFILES); do
+	if [ -d "/etc/finder-app" ]; then
+		writer "$RESULT_ADDR" "$WRITESTR"
+	else
+		./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	fi
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+if [ -d "/etc/finder-app" ]; then
+
+	OUTPUTSTRING=$(./finder.sh "$RESULT_ADDR" "$WRITESTR")
+else
+	OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+fi
 
 set +e
 echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
