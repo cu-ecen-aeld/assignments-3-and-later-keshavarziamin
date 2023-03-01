@@ -46,7 +46,7 @@ make
 
 for i in $(seq 1 $NUMFILES); do
 	if [ -d "/etc/finder-app" ]; then
-		writer "$RESULT_ADDR" "$WRITESTR"
+		./writer "$RESULT_ADDR" "$WRITESTR"
 	else
 		./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 	fi
