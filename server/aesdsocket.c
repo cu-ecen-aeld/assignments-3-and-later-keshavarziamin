@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <syslog.h>
 #include <stdbool.h>
@@ -12,137 +13,164 @@
 
 #define SOCK_DATA_FILE "/var/tmp/aesdsocketdata"
 #define LENGTH_OF_BUFFER 512
+#define RETERR -1
+
+#define __EXIT(msg_)                    \
+    {                                   \
+        perror("ERROR:" msg_ ">>");     \
+        syslog(LOG_ERR, "ERROR:" msg_); \
+        exit(RETERR);                   \
+    }
 
 bool acceptedExit = false;
+int enable = 1;
 
-void printUsage(void)
+
+
+void signal_create(void);
+void server_createSocket(int *serverfd);
+void file_create(FILE *file);
+void file_remove(FILE *file);
+void server_connectSocket(int *serverfd, struct sockaddr_in *serverAddr, const uint16_t port);
+void server_waitToAcceptCient(int *serverfd, struct sockaddr_in *clientAddr);
+
+void signal_acceptExit(int signalType);
+void server_receiveData(FILE *file, int *serverfd);
+void server_exit(FILE *file, int *serverfd);
+void printUsage(void);
+
+int main(int argc, char *argv[])
 {
-    printf("set the default port and ip .\r\n");
-    
-}
+    struct sockaddr_in serverAddr, clientAddr;
+    in_port_t port = 9000;
+    openlog(NULL, 0, LOG_USER); // open system logger
+    uint8_t rxbuff[LENGTH_OF_BUFFER + 1] = {0};
 
-bool file_create(FILE **file)
-{
+    signal_create();
 
-    
+    // create a stream socket
+    int serverfd;
+    server_createSocket(&serverfd);
+    server_connectSocket(&serverfd, &serverAddr, port);
+    server_waitToAcceptCient(&serverfd, &clientAddr);
 
-    *file = fopen(SOCK_DATA_FILE, "w");
-
-    if (!*file)
+    // FILE *file;
+    // file_create(file);
+    int num_read = 0;
+    while (1)
     {
-        perror("Creating a new file failed.");
-        syslog(LOG_ERR, "Creating a new file failed.");
-        return false;
+        num_read = read(clientAddr,)
     }
 
-    printf("creating file succeeded.\r\n");
-    syslog(LOG_INFO, "creating file succeeded.");
-    return true;
+    return 0;
 }
 
-bool file_remove(FILE **file)
+void file_create(FILE *file)
 {
-    //before removing file has to be closed
-    if (access(SOCK_DATA_FILE, F_OK) != 0){
-        perror("ERROR::CLOSING FILE:");
-        syslog(LOG_INFO, "there is not file: %s.",SOCK_DATA_FILE);
-        return false;
+    file = fopen(SOCK_DATA_FILE, "a+");
+    if (!file)
+        __EXIT("creating file failed.")
+}
+
+void server_createSocket(int *serverfd)
+{
+    if (!serverfd)
+    {
+        printf("pointer of serverfd is null.\r\n");
+        exit(RETERR);
     }
-    
-    int err = fclose(*file);
+
+    *serverfd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (*serverfd == -1)
+        __EXIT("creating socket failed.")
+
+    int err = setsockopt(*serverfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
     if (err)
-    {
-        perror("ERROR::CLOSING FILE:");
-        syslog(LOG_INFO, "closing file failed.");
-        return false;
-    }
-    syslog(LOG_INFO, "closing file succeeded.");
+        __EXIT("Setting option on socket failed.")
+}
+
+void signal_create(void)
+{
+    struct sigaction action;
+
+    memset(&action, 0, sizeof(struct sigaction)); // clear buffer
+    action.sa_handler = signal_acceptExit;        // set signal handler
+
+    int err = sigaction(SIGTERM, &action, NULL);
+    if (err)
+        __EXIT("creating signal(SIGTERM) fialed.")
+
+    err = sigaction(SIGINT, &action, NULL);
+    if (err)
+        __EXIT("creating signal(SIGINT) failed.")
+}
+
+void file_remove(FILE *file)
+{
+    // before removing file has to be closed
+    if (access(SOCK_DATA_FILE, F_OK) != 0)
+        __EXIT("accessing to file failed.");
+
+    int err = fclose(file);
+    if (err)
+        __EXIT("closing file failed.");
 
     err = remove(SOCK_DATA_FILE);
     if (err)
-    {
-        perror("ERROR::REMOVING FILE:");
-        syslog(LOG_ERR, "removing file failed.\r\n");
-        return false;
-    }
-
-    syslog(LOG_INFO, "removing file succeeded.");
-
-    return true;
+        __EXIT("removing file failed.");
 }
 
-bool server_createSocket(int *sockfd)
+void server_connectSocket(int *serverfd, struct sockaddr_in *serverAddr, const uint16_t port)
 {
-    if (!sockfd)
-        return false;
 
-    *sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (*sockfd < 0)
-    {
-        perror("Creating a new socket failed.");
-        syslog(LOG_ERR, "Creating a new socket failed.");
-        return false;
-    }
-    return true;
-}
+    memset(serverAddr, 0, sizeof(struct sockaddr_in)); // clear buffer of struct
+    serverAddr->sin_family = AF_INET;
+    serverAddr->sin_addr.s_addr = INADDR_ANY;
+    serverAddr->sin_port = port;
 
-bool server_connectSocket(int *sockfd, struct sockaddr_in *serverAddr)
-{
-    int err = bind(*sockfd, (struct sockaddr *)serverAddr, sizeof(struct sockaddr));
+    int err = bind(*serverfd, (struct sockaddr *)serverAddr, sizeof(struct sockaddr));
     if (err < 0)
-    {
-        syslog(LOG_ERR, "Binding to IP and port failed.");
-        return false;
-    }
+        __EXIT("binding socket failed.");
 
-    err = listen(*sockfd, 10);
+    err = listen(*serverfd, 10);
     if (err)
-    {
-        syslog(LOG_ERR, "Binding to IP and port failed.");
-        return false;
-    }
-    syslog(LOG_DEBUG, "Accepted connection from xxx");
-    return true;
+        __EXIT("listening socket failed.");
 }
 
-bool server_receiveData(FILE **file, int *sockfd)
+void server_waitToAcceptCient(int *serverfd, struct sockaddr_in *clientAddr)
+{
+    char clientIp[INET_ADDRSTRLEN] = {0};
+    socklen_t socklen = sizeof(struct sockaddr);
+    int clientfd = 0;
+
+    printf("server is watting to connect to client >> \r\n");
+
+    while (1)
+    {
+        clientfd = accept(*serverfd, (struct sockaddr *)clientAddr, &socklen);
+        if (clientfd)
+            __EXIT("accepting socket failed.");
+    }
+
+    inet_ntop(AF_INET, &clientAddr->sin_addr, clientIp, INET_ADDRSTRLEN);
+    printf("Accepted connection from %s\r\n", clientIp);
+    syslog(LOG_DEBUG, "Accepted connection from %s", clientIp);
+}
+
+void server_receiveData(FILE *file, int *serverfd)
 {
 
     int buffer[LENGTH_OF_BUFFER];
 
-    if (recv(*sockfd, buffer, LENGTH_OF_BUFFER, 0) < 0)
-        return false;
+    if (recv(*serverfd, buffer, LENGTH_OF_BUFFER, 0) < 0)
+        __EXIT("receiving from client failed.");
 
-    size_t retSize = fwrite(buffer, sizeof(int), LENGTH_OF_BUFFER, *file);
+    size_t retSize = fwrite(buffer, sizeof(int), LENGTH_OF_BUFFER, file);
     if (retSize < 0)
-        return false;
-
-    return true;
+        __EXIT("writing in file failed.");
 }
 
-void server_exit(FILE **file, int *sockfd)
-{
-
-    // if (!file_remove(file))
-    //     exit(EXIT_FAILURE);
-
-    int err = close(*sockfd);
-
-    if (err)
-    {
-        perror("ERROR::CLOSING SOCKET: ");
-        syslog(LOG_ERR, "closing socket falied.\r\n");
-        exit(EXIT_FAILURE);
-    }
-    syslog(LOG_ERR, "closing socket succeeded.");
-    syslog(LOG_DEBUG, "Caught signal, exiting.");
-
-    closelog();
-
-    exit(EXIT_SUCCESS);
-}
-
-static void signal_acceptExit(int signalType)
+void signal_acceptExit(int signalType)
 {
     int saved_errno = errno;
 
@@ -150,93 +178,24 @@ static void signal_acceptExit(int signalType)
         acceptedExit = true;
     printf("acceptedExit is now true\r\n");
     printf("type of signal is %d\r\n", signalType);
+
     errno = saved_errno;
 }
 
-void signal_create()
+void server_exit(FILE *file, int *serverfd)
 {
-    struct sigaction action;
-    memset(&action, 0, sizeof(struct sigaction)); // clear buffer
-    action.sa_handler = signal_acceptExit;        // set signal handler
 
-    int err = sigaction(SIGTERM, &action, NULL);
-    if (err)
-    {
-        perror("SIGNAL::CREATE SIGTERM:");
-        syslog(LOG_ERR, "creating SIGTERM failed.");
-        exit(EXIT_FAILURE);
-    }
+    file_remove(file);
 
-    syslog(LOG_ERR, "creating SIGTERM succeeded.");
+    close(*serverfd);
 
-    err = sigaction(SIGINT, &action, NULL);
-    if (err)
-    {
-        perror("SIGNAL::CREATE SIGINT:");
-        syslog(LOG_ERR, "creating SIGINT failed.");
-        exit(EXIT_FAILURE);
-    }
+    syslog(LOG_DEBUG, "Caught signal, exiting.");
+    closelog();
 
-    syslog(LOG_ERR, "creating SIGINT succeeded.");
+    exit(EXIT_SUCCESS);
 }
 
-int main(int argc, char *argv[])
+void printUsage(void)
 {
-
-    int err = 1;
-    const char *ip = NULL;
-    in_port_t port = 9000;
-    openlog(NULL, 0, LOG_USER); // open system logger
-
-    // check  arguments
-    if (argc != 3)
-    {
-        printUsage();
-    }
-    else
-    {
-        ip = argv[1];
-        port = atoi(argv[2]);
-    }
-
-    signal_create();
-
-    // create a stream socket
-    int sockfd;
-    if (!server_createSocket(&sockfd))
-        return err;
-
-    struct sockaddr_in serverAddr;
-    memset(&serverAddr, 0, sizeof(struct sockaddr)); // clear buffer of struct
-
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddr.sin_port = port;
-
-    if (!server_connectSocket(&sockfd, &serverAddr))
-        return err;
-    printf("Accepted connection from %d.\r\n", serverAddr.sin_addr.s_addr);
-
-    FILE *file ;
-    if (!file_create(&file))
-        return err;
-
-    
-    
-    while (1)
-    {
-        // if (!server_receiveData(file, &sockfd))
-        // {
-        //     syslog(LOG_ERR, "recieving data failed\r\n");
-        //     return err;
-        // }
-        if (acceptedExit){
-            file_remove(&file);
-            exit(0);
-            // server_exit(&file, &sockfd);
-        }
-            // break;
-    }
-
-    return 0;
+    printf("set the default port and ip.\r\n");
 }
