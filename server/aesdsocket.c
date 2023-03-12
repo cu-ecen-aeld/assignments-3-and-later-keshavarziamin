@@ -37,13 +37,13 @@ void signal_create(void);
 void daemon_create(char *argv);
 void server_createSocket(struct net_t *server);
 void file_create(FILE **file);
-void file_remove(FILE *file);
+void file_remove(FILE **file);
 void server_connectSocket(struct net_t *server, const uint16_t port);
 void server_waitToAcceptClient(struct net_t *server, struct net_t *client);
 
 void signal_acceptExit(int signalType);
 void server_echoData(FILE **file, int cleinrfd, uint8_t *rxbuff);
-void server_exit(FILE *file, struct net_t *sever);
+void server_exit(FILE **file, struct net_t *server, struct net_t *client);
 void printUsage(void);
 
 int main(int argc, char *argv[])
@@ -70,8 +70,13 @@ int main(int argc, char *argv[])
 
     while (1)
     {
+        // before exiting, the server, client, and file have to be closed.
+        if (acceptedExit == true)
+            server_exit(&file, &server, &client);
+
         // accept client before receiving data
         server_waitToAcceptClient(&server, &client);
+
         /*
          * receive and echo data from and to client.
          * data must to be write in file after receiving,
@@ -80,9 +85,6 @@ int main(int argc, char *argv[])
         server_echoData(&file, client.fd, rxbuff);
     }
 
-    unlink(SOCK_DATA_FILE);
-    int err = fclose(file);
-    perror("closing file: ");
     return 0;
 }
 
@@ -191,10 +193,9 @@ void server_echoData(FILE **file, int clientfd, uint8_t *rxbuff)
         if (len == -1)
             __EXIT("writing data on file failed.");
 
-        // return the start of STREAM if there is '\n'
+        // return the start of STREAM if there is
         if (rxbuff[len - 1] == '\n')
             rewind(*file);
-            
         // read data written from file
         while (1)
         {
@@ -224,15 +225,19 @@ void signal_acceptExit(int signalType)
     errno = saved_errno;
 }
 
-void server_exit(FILE *file, struct net_t *server)
+void server_exit(FILE **file, struct net_t *server, struct net_t *client)
 {
 
     file_remove(file);
 
     close(server->fd);
+    close(client->fd);
 
     syslog(LOG_DEBUG, "Caught signal, exiting.");
     closelog();
+
+    memset(server, 0, sizeof(struct net_t));
+    memset(client, 0, sizeof(struct net_t));
 
     exit(EXIT_SUCCESS);
 }
@@ -244,13 +249,13 @@ void file_create(FILE **file)
         __EXIT("creating file failed.")
 }
 
-void file_remove(FILE *file)
+void file_remove(FILE **file)
 {
     // before removing file has to be closed
     if (access(SOCK_DATA_FILE, F_OK) != 0)
         __EXIT("accessing to file failed.");
 
-    int err = fclose(file);
+    int err = fclose(*file);
     if (err)
         __EXIT("closing file failed.");
 
