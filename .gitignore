@@ -9,3 +9,5 @@ test.sh.log
 server/client*
 server/server*
 server/valgrind-out.txt
+server/test*
+server/aesdsocket
