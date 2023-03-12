@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <signal.h>
 
+
 #define SOCK_DATA_FILE "/var/tmp/aesdsocketdata"
 #define LENGTH_OF_BUFFER 2024
 #define RETERR -1
