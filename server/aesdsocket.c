@@ -22,7 +22,12 @@
         unlink(SOCK_DATA_FILE);         \
         exit(RETERR);                   \
     }
+
+#ifdef DEBUG_ACTIVE
 #define __SUCCESS() printf("%s succeeded.\r\n", __func__)
+#else
+#define __SUCCESS()
+#endif
 
 bool acceptedExit = false;
 int enable = 1;
@@ -57,9 +62,6 @@ int main(int argc, char *argv[])
     FILE *file = {0};
     file_create(&file);
 
-    // create signal
-    signal_create();
-
     // create a connect to socket (localhost)
     server_createSocket(&server);
     server_connectSocket(&server, port);
@@ -67,6 +69,9 @@ int main(int argc, char *argv[])
     // create a daemon if argv == -d
     if (argc == 2)
         daemon_create(argv[1]);
+
+    // create signal
+    signal_create();
 
     while (1)
     {
@@ -76,6 +81,8 @@ int main(int argc, char *argv[])
 
         // accept client before receiving data
         server_waitToAcceptClient(&server, &client);
+        if (client.fd == -1)
+            continue;
 
         /*
          * receive and echo data from and to client.
@@ -112,13 +119,12 @@ void daemon_create(char *argv)
         return;
 
     pid_t pid = 0;
-    if (strcmp(argv, "-d"))
-        pid = daemon(0, 0);
+    if (strcmp(argv, "-d") != 0)
+        __EXIT("Creating daemon faield.");
 
+    pid = daemon(0, 0);
     if (pid == -1)
         __EXIT("forking the process failed");
-
-    __SUCCESS();
 }
 
 void server_createSocket(struct net_t *server)
@@ -133,6 +139,7 @@ void server_createSocket(struct net_t *server)
     int err = setsockopt(server->fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
     if (err)
         __EXIT("Setting option on socket failed.");
+
     __SUCCESS();
 }
 
@@ -159,17 +166,14 @@ void server_waitToAcceptClient(struct net_t *server, struct net_t *client)
 {
     char clientIp[INET_ADDRSTRLEN] = {0};
     socklen_t socklen = sizeof(struct sockaddr);
-    client->fd = 0;
-
-    printf("server is watting to connect to client >> \r\n");
 
     client->fd = accept(server->fd, (struct sockaddr *)&client->addr, &socklen);
-    if (client->fd == -1)
-        __EXIT("accepting socket failed.");
 
-    inet_ntop(AF_INET, &client->addr.sin_addr, clientIp, INET_ADDRSTRLEN);
-    printf("Accepted connection from %s\r\n", clientIp);
-    syslog(LOG_DEBUG, "Accepted connection from %s", clientIp);
+    if (client->fd == 0)
+    {
+        inet_ntop(AF_INET, &client->addr.sin_addr, clientIp, INET_ADDRSTRLEN);
+        syslog(LOG_DEBUG, "Accepted connection from %s", clientIp);
+    }
 
     __SUCCESS();
 }
@@ -219,8 +223,7 @@ void signal_acceptExit(int signalType)
 
     if (signalType == SIGINT || signalType == SIGTERM)
         acceptedExit = true;
-    printf("acceptedExit is now true\r\n");
-    printf("type of signal is %d\r\n", signalType);
+    syslog(LOG_DEBUG, "Caught signal, exiting");
 
     errno = saved_errno;
 }
@@ -228,16 +231,24 @@ void signal_acceptExit(int signalType)
 void server_exit(FILE **file, struct net_t *server, struct net_t *client)
 {
 
-    file_remove(file);
+    if (close(server->fd) == -1)
+        __EXIT("closing server faield.");
+    // if (close(client->fd) == -1)
+    //     __EXIT("closing client failed.");
+    char clientIp[INET_ADDRSTRLEN] = {0};
+    inet_ntop(AF_INET, &client->addr.sin_addr, clientIp, INET_ADDRSTRLEN);
+    syslog(LOG_DEBUG, "Closed connection from %s", clientIp);
 
-    close(server->fd);
     close(client->fd);
 
-    syslog(LOG_DEBUG, "Caught signal, exiting.");
     closelog();
 
     memset(server, 0, sizeof(struct net_t));
     memset(client, 0, sizeof(struct net_t));
+
+    file_remove(file);
+
+    __SUCCESS();
 
     exit(EXIT_SUCCESS);
 }
@@ -251,17 +262,12 @@ void file_create(FILE **file)
 
 void file_remove(FILE **file)
 {
-    // before removing file has to be closed
-    if (access(SOCK_DATA_FILE, F_OK) != 0)
-        __EXIT("accessing to file failed.");
 
     int err = fclose(*file);
     if (err)
         __EXIT("closing file failed.");
 
-    err = remove(SOCK_DATA_FILE);
-    if (err)
-        __EXIT("removing file failed.");
+    unlink(SOCK_DATA_FILE);
 }
 
 void printUsage(void)
