@@ -54,7 +54,7 @@ done
 
 if [ -d "/etc/finder-app" ]; then
 
-	OUTPUTSTRING=$(./finder.sh "$RESULT_ADDR" "$WRITESTR")
+	OUTPUTSTRING=$(finder.sh "$RESULT_ADDR" "$WRITESTR")
 else
 	OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
 fi
