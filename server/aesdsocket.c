@@ -10,12 +10,12 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <signal.h>
-
+#include <pthread.h>
 
 #define SOCK_DATA_FILE "/var/tmp/aesdsocketdata"
 #define LENGTH_OF_BUFFER 2024
 #define RETERR -1
-
+#define MAX_ECHO_THREAD 200
 #define __EXIT(msg_)                    \
     {                                   \
         perror("ERROR:" msg_ ">>");     \
@@ -30,8 +30,13 @@
 #define __SUCCESS()
 #endif
 
-bool acceptedExit = false;
-int enable = 1;
+struct _arg_echoData
+{
+    FILE *file;
+    int cleinrfd;
+    uint8_t *rxbuff;
+    pthread_mutex_t mtx;
+};
 
 struct net_t
 {
@@ -41,31 +46,48 @@ struct net_t
 
 void signal_create(void);
 void daemon_create(char *argv);
-void server_createSocket(struct net_t *server);
-void file_create(FILE **file);
-void file_remove(FILE **file);
-void server_connectSocket(struct net_t *server, const uint16_t port);
-void server_waitToAcceptClient(struct net_t *server, struct net_t *client);
-
+void server_createSocket(void);
+void file_remove(void);
+void server_connectSocket(void);
+void server_waitToAcceptClient(void);
 void signal_acceptExit(int signalType);
-void server_echoData(FILE **file, int cleinrfd, uint8_t *rxbuff);
-void server_exit(FILE **file, struct net_t *server, struct net_t *client);
+void server_echoData(void);
+void server_exit(void);
 void printUsage(void);
+
+void thread_createMainThread(void);
+void thread_createEchoThread(void);
+static void *server_handleMainThread(void *arg);
+static void *server_handleEchoDataThread(void *arg);
+
+
+struct net_t server, client;
+in_port_t port = 9000;
+uint8_t rxbuff[LENGTH_OF_BUFFER + 1] = {0};
+FILE *file = {0};
+pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+bool acceptedExit = false;
+int enable = 1;
+pthread_t thr_main;
+pthread_t thr_echolist[MAX_ECHO_THREAD];
+void *res_main;
+void *res_echo[MAX_ECHO_THREAD];
+uint32_t idxecho = 0;
 
 int main(int argc, char *argv[])
 {
-    struct net_t server, client;
-    in_port_t port = 9000;
+
+    // create mutex
     openlog(NULL, 0, LOG_USER); // open system logger
-    uint8_t rxbuff[LENGTH_OF_BUFFER + 1] = {0};
 
     // create and open file in order to write recived data
-    FILE *file = {0};
-    file_create(&file);
+    file = fopen(SOCK_DATA_FILE, "a+");
+    if (!file)
+        __EXIT("creating file failed.")
 
     // create a connect to socket (localhost)
-    server_createSocket(&server);
-    server_connectSocket(&server, port);
+    server_createSocket();
+    server_connectSocket();
 
     // create a daemon if argv == -d
     if (argc == 2)
@@ -74,24 +96,8 @@ int main(int argc, char *argv[])
     // create signal
     signal_create();
 
-    while (1)
-    {
-        // before exiting, the server, client, and file have to be closed.
-        if (acceptedExit == true)
-            server_exit(&file, &server, &client);
-
-        // accept client before receiving data
-        server_waitToAcceptClient(&server, &client);
-        if (client.fd == -1)
-            continue;
-
-        /*
-         * receive and echo data from and to client.
-         * data must to be write in file after receiving,
-         * then read them before transmmiting.
-         */
-        server_echoData(&file, client.fd, rxbuff);
-    }
+    // create the main thread to create clients threads
+    thread_createMainThread();
 
     return 0;
 }
@@ -128,95 +134,56 @@ void daemon_create(char *argv)
         __EXIT("forking the process failed");
 }
 
-void server_createSocket(struct net_t *server)
+void server_createSocket(void)
 {
-    if (!server)
-        __EXIT("The pinter of server is null.");
 
-    server->fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server->fd == -1)
+    server.fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server.fd == -1)
         __EXIT("creating socket failed.")
 
-    int err = setsockopt(server->fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+    int err = setsockopt(server.fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
     if (err)
         __EXIT("Setting option on socket failed.");
 
     __SUCCESS();
 }
 
-void server_connectSocket(struct net_t *server, const uint16_t port)
+void server_connectSocket(void)
 {
 
-    memset(&server->addr, 0, sizeof(struct sockaddr_in)); // clear buffer of struct
-    server->addr.sin_family = AF_INET;
-    server->addr.sin_addr.s_addr = INADDR_ANY;
-    server->addr.sin_port = htons(port);
+    memset(&server.addr, 0, sizeof(struct sockaddr_in)); // clear buffer of struct
+    server.addr.sin_family = AF_INET;
+    server.addr.sin_addr.s_addr = INADDR_ANY;
+    server.addr.sin_port = htons(port);
 
-    int err = bind(server->fd, (struct sockaddr *)&server->addr, sizeof(struct sockaddr));
+    int err = bind(server.fd, (struct sockaddr *)&server.addr, sizeof(struct sockaddr));
     if (err < 0)
         __EXIT("binding socket failed.");
 
-    err = listen(server->fd, 10);
+    err = listen(server.fd, 10);
     if (err)
         __EXIT("listening socket failed.");
 
     __SUCCESS();
 }
 
-void server_waitToAcceptClient(struct net_t *server, struct net_t *client)
+void server_waitToAcceptClient(void)
 {
     char clientIp[INET_ADDRSTRLEN] = {0};
     socklen_t socklen = sizeof(struct sockaddr);
 
-    client->fd = accept(server->fd, (struct sockaddr *)&client->addr, &socklen);
+    client.fd = accept(server.fd, (struct sockaddr *)&client.addr, &socklen);
 
-    if (client->fd == 0)
+    if (client.fd == 0)
     {
-        inet_ntop(AF_INET, &client->addr.sin_addr, clientIp, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &client.addr.sin_addr, clientIp, INET_ADDRSTRLEN);
         syslog(LOG_DEBUG, "Accepted connection from %s", clientIp);
     }
 
     __SUCCESS();
 }
 
-void server_echoData(FILE **file, int clientfd, uint8_t *rxbuff)
-{
-    int len = 0;
-    uint8_t txBuff[LENGTH_OF_BUFFER + 1] = {0};
-    while (1)
-    {
-        // read data from buffer of client
-        len = read(clientfd, rxbuff, LENGTH_OF_BUFFER);
-        if (len < 0)
-            __EXIT("Reading data from the client failed.");
-        if (len == 0)
-            break;
 
-        // write data on file
-        rxbuff[len] = '\0';
-        len = fprintf(*file, "%s", (char *)rxbuff);
-        if (len == -1)
-            __EXIT("writing data on file failed.");
-
-        // return the start of STREAM if there is
-        if (rxbuff[len - 1] == '\n')
-            rewind(*file);
-        // read data written from file
-        while (1)
-        {
-            len = fread(txBuff, 1, LENGTH_OF_BUFFER, *file);
-            if (len == 0)
-                break;
-            if (len == -1)
-                __EXIT("Reading from file failed.");
-
-            len = write(clientfd, txBuff, len);
-            if (len == -1)
-                __EXIT("Echoing data to client failed."); /* code */
-        }
-    }
-    __SUCCESS();
-}
 
 void signal_acceptExit(int signalType)
 {
@@ -229,42 +196,35 @@ void signal_acceptExit(int signalType)
     errno = saved_errno;
 }
 
-void server_exit(FILE **file, struct net_t *server, struct net_t *client)
+void server_exit(void)
 {
 
-    if (close(server->fd) == -1)
+    if (close(server.fd) == -1)
         __EXIT("closing server faield.");
-    // if (close(client->fd) == -1)
+    // if (close(client.fd) == -1)
     //     __EXIT("closing client failed.");
     char clientIp[INET_ADDRSTRLEN] = {0};
-    inet_ntop(AF_INET, &client->addr.sin_addr, clientIp, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &client.addr.sin_addr, clientIp, INET_ADDRSTRLEN);
     syslog(LOG_DEBUG, "Closed connection from %s", clientIp);
 
-    close(client->fd);
+    close(client.fd);
 
     closelog();
 
-    memset(server, 0, sizeof(struct net_t));
-    memset(client, 0, sizeof(struct net_t));
+    memset(&server, 0, sizeof(struct net_t));
+    memset(&client, 0, sizeof(struct net_t));
 
-    file_remove(file);
+    file_remove();
 
     __SUCCESS();
 
     exit(EXIT_SUCCESS);
 }
 
-void file_create(FILE **file)
-{
-    *file = fopen(SOCK_DATA_FILE, "a+");
-    if (!*file)
-        __EXIT("creating file failed.")
-}
-
-void file_remove(FILE **file)
+void file_remove(void)
 {
 
-    int err = fclose(*file);
+    int err = fclose(file);
     if (err)
         __EXIT("closing file failed.");
 
@@ -274,4 +234,115 @@ void file_remove(FILE **file)
 void printUsage(void)
 {
     printf("set the default port and ip.\r\n");
+}
+
+
+void thread_createMainThread(void)
+{
+
+    int err = pthread_create(&thr_main, NULL,
+                             server_handleMainThread, NULL);
+    if (err)
+        __EXIT("creating main thread faield.");
+
+    err = pthread_join(thr_main, &res_main);
+    if (err)
+        __EXIT("joining main thread falied.");
+
+    printf("The main thread has just created.\n");
+}
+
+static void *server_handleMainThread(void *arg)
+{
+    // int err = 0;
+    while (1)
+    {
+        // before exiting, the server, client, and file have to be closed.
+        if (acceptedExit == true)
+            server_exit();
+
+        // accept client before receiving data
+        printf("server is wating to accept client connection.\n");
+        server_waitToAcceptClient();
+        if (client.fd == -1)
+            continue;
+        /*
+         * create thread for each request to connect from client
+         * in order to manage multi-client requests.
+         *
+         * receive and echo data from and to client.
+         * data must to be write in file after receiving,
+         * then read them before transmmiting.
+         */
+        thread_createEchoThread();
+        printf("Server accepted new client connection .\n");
+    }
+    return (void *)0;
+}
+
+void thread_createEchoThread(void)
+{
+    int err = pthread_create(&thr_echolist[idxecho], NULL,
+                             server_handleEchoDataThread, NULL);
+    if (err)
+        __EXIT("creating echo data thread failed.");
+
+    err = pthread_join(thr_echolist[idxecho], &res_echo[idxecho]);
+    if (err)
+        __EXIT("joining thread failed.");
+
+    printf("a echoData thread [%d] has juct created.\n", idxecho);
+
+    idxecho++;
+}
+static void *server_handleEchoDataThread(void *arg)
+{
+    if (pthread_mutex_trylock(&mtx) != 0) // lock other threads to start process
+        __EXIT("locking threads failed.");
+
+    server_echoData();
+
+    if (pthread_mutex_unlock(&mtx) != 0)
+        __EXIT("unlocking threads failed.");
+
+    return (void*) 0 ;
+}
+
+void server_echoData(void)
+{
+    int len = 0;
+    uint8_t txBuff[LENGTH_OF_BUFFER + 1] = {0};
+    while (1)
+    {
+        // read data from buffer of client
+        len = read(client.fd, rxbuff, LENGTH_OF_BUFFER);
+        if (len < 0)
+            __EXIT("Reading data from the client failed.");
+        if (len == 0)
+            break;
+
+        // write data on file
+        rxbuff[len] = '\0';
+        len = fprintf(file, "%s", (char *)rxbuff);
+        if (len == -1)
+            __EXIT("writing data on file failed.");
+
+        // return the start of STREAM if there is
+        if (rxbuff[len - 1] == '\n')
+            rewind(file);
+        // read data written from file
+        while (1)
+        {
+            len = fread(txBuff, 1, LENGTH_OF_BUFFER, file);
+            if (len == 0)
+                break;
+            if (len == -1)
+                __EXIT("Reading from file failed.");
+
+            len = write(client.fd, txBuff, len);
+            if (len == -1)
+                __EXIT("Echoing data to client failed."); /* code */
+        }
+    }
+    __SUCCESS();
 }
