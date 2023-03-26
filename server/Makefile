@@ -1,4 +1,4 @@
-CROSS_COMPILE=arm-unknown-linux-gnueabi-
+CROSS_COMPILE=aarch64-none-linux-gnu-
 # CC=gcc
 CC=${CROSS_COMPILE}gcc
 CFLAGS  += -g -Wall
