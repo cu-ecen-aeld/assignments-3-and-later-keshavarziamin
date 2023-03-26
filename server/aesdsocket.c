@@ -11,6 +11,9 @@
 #include <errno.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sys/queue.h>
+
+
 
 #define SOCK_DATA_FILE "/var/tmp/aesdsocketdata"
 #define LENGTH_OF_BUFFER 2024
@@ -280,6 +283,15 @@ void thread_createEchoThread(int *clientfd)
     printf("a echoData thread [%d] has juct created.\n", idxecho);
 
     idxecho++;
+    /**
+     * Exiting the initial thread (for example, 
+     * by calling the pthread_exit subroutine from the main routine) does not terminate the process. 
+     * It terminates only the initial thread. 
+     * If the initial thread is terminated, 
+     * the process will be terminated when the last thread in it terminates. 
+     * In this case, the process return code is 0.
+     */
+    // pthread_exit(NULL); //
 }
 static void *server_handleEchoDataThread(void *clientfd)
 {
@@ -348,5 +360,6 @@ void server_echoData(int *cfd)
                 __EXIT("Echoing data to client failed."); /* code */
         }
     }
+    // pthread_exit(NULL);
     __SUCCESS();
 }
