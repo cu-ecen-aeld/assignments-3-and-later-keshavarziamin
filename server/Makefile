@@ -1,5 +1,5 @@
-CC=gcc
-# CC=${CROSS_COMPILE}gcc
+# CC=gcc
+CC=${CROSS_COMPILE}gcc
 CFLAGS  += -g -Wall
 
 TARGET = aesdsocket
