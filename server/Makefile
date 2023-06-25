@@ -1,6 +1,6 @@
 CROSS_COMPILE=aarch64-none-linux-gnu-
-# CC=gcc
 CC=${CROSS_COMPILE}gcc
+# CC=gcc
 CFLAGS  += -g -Wall
 
 TARGET = aesdsocket
